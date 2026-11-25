@@ -1,0 +1,77 @@
+services:
+  lab02:
+    depends_on:
+      roach-db-init:
+        condition: service_completed_successfully
+    build:
+      context: .
+    container_name: lab02-app
+    hostname: lab02-app
+    networks:
+      - lab02-net
+    ports:
+      - 80:8080
+    environment:
+      - CRDB_HOST=roach-db
+      - CRDB_PORT=26257
+      - CRDB_USER=root
+      - CRDB_PASSWORD=
+      - CRDB_DATABASE=lab02-db
+      - CRDB_SSLMODE=disable
+
+  lab02-test:
+    depends_on:
+      roach-db-init:
+        condition: service_completed_successfully
+    build:
+      context: .
+      target: test
+    container_name: lab02-test
+    networks:
+      - lab02-net
+    environment:
+      - CRDB_HOST=roach-db
+      - CRDB_PORT=26257
+      - CRDB_USER=root
+      - CRDB_PASSWORD=
+      - CRDB_DATABASE=lab02-db
+      - CRDB_SSLMODE=disable
+    profiles:
+      - test # only started when "--profile test" is passed
+
+  roach-db:
+    image: cockroachdb/cockroach:latest-v25.4
+    container_name: roach-db
+    hostname: roach-db
+    networks:
+      - lab02-net
+    ports:
+      - 26257:26257
+      - 8080:8080
+    volumes:
+      - roach-db:/cockroach/cockroach-data
+    command: start-single-node --insecure
+    healthcheck:
+      test: ["CMD", "cockroach", "sql", "--insecure", "-e", "SELECT 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  roach-db-init:
+    image: cockroachdb/cockroach:latest-v25.4
+    networks:
+      - lab02-net
+    depends_on:
+      roach-db:
+        condition: service_healthy
+    volumes:
+      - ./init.sql:/init.sql
+    command: sql --insecure --host=roach-db:26257 -f /init.sql
+    restart: "no"
+
+volumes:
+  roach-db:
+
+networks:
+  lab02-net:
+    driver: bridge

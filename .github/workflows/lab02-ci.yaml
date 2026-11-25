@@ -1,0 +1,76 @@
+# Documentation on docker/build-push-action:
+# https://github.com/docker/build-push-action
+
+name: lab02-ci
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - "labs/lab02/**"
+  pull_request:
+    branches:
+      - main
+    paths:
+      - "labs/lab02/**"
+
+jobs:
+  build-test-push-dev:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: labs/lab02
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v5
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Extract short SHA
+        id: shortsha
+        run: echo "SHA=${GITHUB_SHA::7}" >> $GITHUB_OUTPUT
+
+      # Build locally first with no push to a registry
+      - name: Build and load image locally
+        uses: docker/build-push-action@v6
+        with:
+          context: labs/lab02
+          push: false
+          load: true
+          platforms: linux/amd64
+          tags: |
+            lab02-app:${{ steps.shortsha.outputs.SHA }}
+            lab02-app:latest
+          # github actions cache!
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      # Test from locally built image above
+      - name: Run integration tests
+        run: docker compose --profile test run --rm lab02-test
+
+      - name: Tear down
+        if: always()
+        run: docker compose --profile test down --volumes --remove-orphans
+
+      - name: Login to Docker Hub
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKER_HUB_USERNAME }}
+          password: ${{ secrets.DOCKER_HUB_PASSWORD }}
+
+      - name: Build and push final image
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: docker/build-push-action@v6
+        with:
+          context: labs/lab02
+          push: true
+          platforms: linux/amd64,linux/arm64
+          tags: |
+            ${{ secrets.DOCKER_HUB_USERNAME }}/andre-kb:lab02-${{ steps.shortsha.outputs.SHA }}
+            ${{ secrets.DOCKER_HUB_USERNAME }}/andre-kb:lab02-latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max

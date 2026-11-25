@@ -1,0 +1,62 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: nginx-deployment
+  # Optional labels
+  labels:
+    app: nginx
+spec:
+  # This field specifies the maximum number of older deployments that # hang
+  # arround if you wish to rollback or analyse them. The default value is 10.
+  revisionHistoryLimit: 5
+  # Wait at least 60 seconds before updating the next Pod. This
+  # ensures the Pod is really ready even though health checks are
+  # performed already.
+  minReadySeconds: 60
+  # Timeout for Pod.
+  progressDeadlineSeconds: 600
+  replicas: 3
+  strategy:
+    # Default if ommited
+    type: RollingUpdate
+    rollingUpdate:
+      # How many Pods above replica count during deployment.
+      maxSurge: 1
+      # How many unavailable during deployment.
+      maxUnavailable: 1
+  selector:
+    # Tells which Pods the deployment is reponsible for (Pods with the nginx
+    # label).
+    matchLabels:
+      app: nginx
+  template:
+    metadata:
+      # Required labels for the deployment to match with Pods.
+      labels:
+        app: nginx
+      annotations:
+        # Annotation to use if you update the deployment, i.e, you
+        # roll out a new deployment. # This will show nicely on "kubectl
+        # rollout history deployment deployment_name".
+        kubernetes.io/change-cause: "Testing rolling update."
+    spec:
+      containers:
+      - name: nginx
+        image: nginx:1.27-alpine
+        ports:
+        - containerPort: 80
+        resources:
+          requests:
+            cpu: "50m"
+            memory: "64Mi"
+          limits:
+            cpu: "200m"
+            memory: "128Mi"
+            
+      # Common spec to reduce the value of ndots (5 is default) and thus the
+      # amount of queries to CoreDNS
+      dnsPolicy: ClusterFirst
+      dnsConfig:
+        options:
+        - name: ndots
+          value: "2"

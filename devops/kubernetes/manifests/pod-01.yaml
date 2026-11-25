@@ -1,0 +1,110 @@
+# Example of a manifest for a nginx Pod.
+apiVersion: v1
+kind: Pod
+metadata:
+  name: nginx-pod
+  labels:
+    app: nginx
+spec:
+
+  # Implementing least access principle using a security context.
+  # It's applyied to all containers here.
+
+  securityContext:
+    runAsUser: 1000         # Run all containers as UID 1000
+    runAsGroup: 3000        # Primary GID 3000
+    fsGroup: 2000           # Volumes are owned by GID 2000
+    runAsNonRoot: true      # Refuse to start if image runs as root
+
+  # The restart policy defines how containers should restart default is already
+  # Always the other two are Never and OnFailure.
+  restartPolicy: Always
+
+  containers:
+    - name: nginx
+
+      # Never use latest tag in production settings, aim for reproducible
+      # deployments.
+      image: nginx:latest
+
+      # Only pulls the image if it's not present in the cluster, otherwise it
+      # will use the image in the cache.
+      imagePullPolicy: IfNotPresent
+
+      # Specific to this container.
+      securityContext:
+        allowPrivilegeEscalation: false   # Prevent setuid binaries
+        readOnlyRootFilesystem: true      # Prevent writes to /
+        capabilities:
+          drop: ["ALL"]                   # Drop all Linux capabilities
+          # Add what you need here <---------
+
+      resources:
+        # Minimum resources for the container, Kubernetes guarantees
+        # they exist on the node before starting the container.
+        requests:
+          cpu: "500m"      # Half a core (m stands for millicores, 1000m = 1 core).
+          memory: "128Mi"
+
+        # Maximum resources the container can use.
+        limits:
+          cpu: "1000m"
+          memory: "256Mi"
+
+      # This block is optional
+      ports:
+        - containerPort: 80
+          name: http
+          protocol: TCP
+
+      # preStop runs before the container receives SIGTERM. Sleeping here
+      # buys time for the endpoint to be removed from Service/kube-proxy
+      # so no new traffic arrives while your app is draining in-flight
+      # requests (see your Go server's graceful shutdown logic).
+      lifecycle:
+        preStop:
+          exec:
+            command: ["/bin/sh", "-c", "sleep 5"]
+
+      # Check if the container inside is healthy even if the process
+      # is running ok. Kubernetes will always keep the container process
+      # alive, but health checks are specific to the application and
+      # must be specified in the manifest.
+      livenessProbe:
+        httpGet:
+          path: /
+          port: 80
+        initialDelaySeconds: 5
+        periodSeconds: 10
+        timeoutSeconds: 2
+        failureThreshold: 3
+
+      # Readiness probe to check if the container is ready to
+      # receive requests.  
+      readinessProbe:
+        httpGet:
+          path: /
+          port: 80
+        initialDelaySeconds: 30
+        timeoutSeconds: 1
+        periodSeconds: 10
+        failureThreshold: 3
+
+      # Since readOnlyRootFileystem is set to true Nginx needs these volume
+      # mounts to create the necessary resources to function.
+      volumeMounts:
+        - name: nginx-cache
+          mountPath: /var/cache/nginx
+        - name: nginx-run
+          mountPath: /var/run
+        - name: nginx-etc
+          mountPath: /etc/nginx/conf.d
+
+# Specific volumes needed by Nginx.
+  volumes:
+    - name: nginx-cache
+      emptyDir: {}
+    - name: nginx-run
+      emptyDir: {}
+    - name: nginx-etc
+      emptyDir: {}
